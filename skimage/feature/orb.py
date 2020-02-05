@@ -274,6 +274,62 @@ class ORB(FeatureDetector, DescriptorExtractor):
         self.descriptors = np.vstack(descriptors_list).view(np.bool)
         self.mask_ = np.hstack(mask_list)
 
+    # TODO: This is where we need to work
+    def extract_multichannel(self, image, keypoints, scales, orientations):
+        """Extract crBRIEF binary descriptors for given keypoints in image.
+
+        Note that the keypoints must be extracted using the same `downscale`
+        and `n_scales` parameters. Additionally, if you want to extract both
+        keypoints and descriptors you should use the faster
+        `detect_and_extract`.
+
+        Parameters
+        ----------
+        image : 2-nD array
+            Input image.
+        keypoints : (N, 2) array
+            Keypoint coordinates as ``(row, col)``.
+        scales : (N, ) array
+            Corresponding scales.
+        orientations : (N, ) array
+            Corresponding orientations in radians.
+
+        """
+        # check_nD(image, 2) We dont need the image to be 2d - in fact we expect it to be 3 or more
+
+        pyramid = self._build_pyramid(image)
+
+        descriptors_list = []
+        mask_list = []
+
+        # Determine octaves from scales
+        octaves = (np.log(scales) / np.log(self.downscale)).astype(np.intp)
+
+        for octave in range(len(pyramid)):
+
+            # Mask for all keypoints in current octave
+            octave_mask = octaves == octave
+
+            if np.sum(octave_mask) > 0:
+
+                octave_image = np.ascontiguousarray(pyramid[octave])
+
+                octave_keypoints = keypoints[octave_mask]
+                octave_keypoints /= self.downscale ** octave
+
+                octave_orientations = orientations[octave_mask]
+
+                descriptors, mask = self._extract_octave(octave_image,
+                                                         octave_keypoints,
+                                                         octave_orientations)
+
+                descriptors_list.append(descriptors)
+                mask_list.append(mask)
+
+        self.descriptors = np.vstack(descriptors_list).view(np.bool)
+        self.mask_ = np.hstack(mask_list)
+
+
     def detect_and_extract(self, image):
         """Detect oriented FAST keypoints and extract rBRIEF descriptors.
 
