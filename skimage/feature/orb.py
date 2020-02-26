@@ -135,8 +135,27 @@ class ORB(FeatureDetector, DescriptorExtractor):
         return list(pyramid_gaussian(image, self.n_scales - 1,
                                      self.downscale, multichannel=False))
 
+
+    # ORB-C EXTENSION
+    def _c_build_pyramid(self, image: np.ndarray, multichannel: bool = False):
+        if not multichannel:
+            return self._build_pyramid(image)
+
+        # 'multichannel=False' seems counter-intuitive,
+        # but it's how it needs to be
+        return list(pyramid_gaussian(image, self.n_scales - 1,
+                                     self.downscale, multichannel=False))
+
+    # ORB-C EXTENSION:  Colored oFAST
+    def _c_detect_octave(self, octave_image: np.ndarray):
+        if octave_image.ndim == 2:
+            return self._detect_octave(octave_image)
+
+        fast_responses = [corner_fast(channel, self.fast_n, self.fast_threshold) for channel in octave_image[:,:,]]
+
     def _detect_octave(self, octave_image):
         # Extract keypoints for current octave
+        # fast_response is a 'measure image' representing the 'cornerness', i.e. how corner each pixel is
         fast_response = corner_fast(octave_image, self.fast_n,
                                     self.fast_threshold)
         keypoints = corner_peaks(fast_response, min_distance=1)
@@ -295,9 +314,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
             Corresponding orientations in radians.
 
         """
-        # check_nD(image, 2) We dont need the image to be 2d - in fact we expect it to be 3 or more
-
-        pyramid = self._build_pyramid(image)
+        pyramid = self._c_build_pyramid(image)
 
         descriptors_list = []
         mask_list = []
@@ -319,6 +336,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
 
                 octave_orientations = orientations[octave_mask]
 
+                # TODO: We need to change _extract_octave (and probably some code with relations to it)
                 descriptors, mask = self._extract_octave(octave_image,
                                                          octave_keypoints,
                                                          octave_orientations)
