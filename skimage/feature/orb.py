@@ -9,7 +9,7 @@ from ..feature import (corner_fast, corner_orientations, corner_peaks,
 from ..transform import pyramid_gaussian
 from .._shared.utils import check_nD
 
-from .orb_cy import _orb_loop
+from .orb_cy import (_orb_loop, _c_orb_loop)
 
 
 OFAST_MASK = np.zeros((31, 31))
@@ -150,8 +150,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
     def _c_detect_octave(self, octave_image: np.ndarray):
         if octave_image.ndim == 2:
             return self._detect_octave(octave_image)
-
-        fast_responses = [corner_fast(channel, self.fast_n, self.fast_threshold) for channel in octave_image[:,:,]]
+        print("Not implemented")
 
     def _detect_octave(self, octave_image):
         # Extract keypoints for current octave
@@ -226,6 +225,20 @@ class ORB(FeatureDetector, DescriptorExtractor):
             self.scales = scales[best_indices]
             self.orientations = orientations[best_indices]
             self.responses = responses[best_indices]
+
+    # ORB-C EXTENSION
+    def _c_extract_octave(self, octave_image, keypoints, orientations):
+        mask = _mask_border_keypoints(octave_image.shape, keypoints,
+                                      distance=20)
+        keypoints = np.array(keypoints[mask], dtype=np.intp, order='C',
+                             copy=False)
+        orientations = np.array(orientations[mask], dtype=np.double, order='C',
+                                copy=False)
+
+        # NOTE: This is changed to use the ORB-C variant of the function
+        descriptors = _c_orb_loop(octave_image, keypoints, orientations)
+
+        return descriptors, mask
 
     def _extract_octave(self, octave_image, keypoints, orientations):
         mask = _mask_border_keypoints(octave_image.shape, keypoints,
@@ -314,7 +327,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
             Corresponding orientations in radians.
 
         """
-        pyramid = self._c_build_pyramid(image)
+        pyramid = self._c_build_pyramid(image, multichannel=True)
 
         descriptors_list = []
         mask_list = []
@@ -336,8 +349,8 @@ class ORB(FeatureDetector, DescriptorExtractor):
 
                 octave_orientations = orientations[octave_mask]
 
-                # TODO: We need to change _extract_octave (and probably some code with relations to it)
-                descriptors, mask = self._extract_octave(octave_image,
+                # NOTE: This is changed to use the ORB-C
+                descriptors, mask = self._c_extract_octave(octave_image,
                                                          octave_keypoints,
                                                          octave_orientations)
 
@@ -346,7 +359,6 @@ class ORB(FeatureDetector, DescriptorExtractor):
 
         self.descriptors = np.vstack(descriptors_list).view(np.bool)
         self.mask_ = np.hstack(mask_list)
-
 
     def detect_and_extract(self, image):
         """Detect oriented FAST keypoints and extract rBRIEF descriptors.
