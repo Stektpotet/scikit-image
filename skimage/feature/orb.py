@@ -150,6 +150,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
     def _c_detect_octave(self, octave_image: np.ndarray):
         if octave_image.ndim == 2:
             return self._detect_octave(octave_image)
+        # return self._detect_octave(color.rgb2gray(octave_image))  # TODO: this is a lazy approach, DO NOT LET IT STAY!
         print("Not implemented")
 
     def _detect_octave(self, octave_image):
@@ -306,7 +307,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
         self.descriptors = np.vstack(descriptors_list).view(np.bool)
         self.mask_ = np.hstack(mask_list)
 
-    # TODO: This is where we need to work
+    # ORB-C EXTENSION
     def extract_multichannel(self, image, keypoints, scales, orientations):
         """Extract crBRIEF binary descriptors for given keypoints in image.
 
@@ -359,6 +360,81 @@ class ORB(FeatureDetector, DescriptorExtractor):
 
         self.descriptors = np.vstack(descriptors_list).view(np.bool)
         self.mask_ = np.hstack(mask_list)
+
+    # ORB-C EXTENSION
+    def detect_and_extract_multichannel(self, image, image_gray):
+        """Detect oriented FAST keypoints and extract crBRIEF descriptors.
+
+                Note that this is faster than first calling `detect` and then
+                `extract_multichannel`.
+
+                Parameters
+                ----------
+                image : 2D array
+                    Input image.
+
+                """
+        # NOTE: the fact that we have to do this is an indicator that we might want to change some things around
+        #       One idea would be to directly use the image
+        pyramid_gray = self._build_pyramid(image_gray)
+        pyramid = self._c_build_pyramid(image, multichannel=True)
+
+        keypoints_list = []
+        responses_list = []
+        scales_list = []
+        orientations_list = []
+        descriptors_list = []
+
+        for octave in range(len(pyramid)):
+
+            octave_image = np.ascontiguousarray(pyramid[octave])
+            octave_gray = np.ascontiguousarray(pyramid_gray[octave])
+
+            keypoints, orientations, responses = \
+                self._detect_octave(octave_gray)
+
+            if len(keypoints) == 0:
+                keypoints_list.append(keypoints)
+                responses_list.append(responses)
+                descriptors_list.append(np.zeros((0, 256), dtype=np.bool))
+                continue
+
+            descriptors, mask = self._c_extract_octave(octave_image, keypoints,
+                                                     orientations)
+
+            scaled_keypoints = keypoints[mask] * self.downscale ** octave
+            keypoints_list.append(scaled_keypoints)
+            responses_list.append(responses[mask])
+            orientations_list.append(orientations[mask])
+            scales_list.append(self.downscale ** octave *
+                               np.ones(scaled_keypoints.shape[0], dtype=np.intp))
+            descriptors_list.append(descriptors)
+
+        if len(scales_list) == 0:
+            raise RuntimeError(
+                "ORB found no features. Try passing in an image containing "
+                "greater intensity contrasts between adjacent pixels.")
+
+        keypoints = np.vstack(keypoints_list)
+        responses = np.hstack(responses_list)
+        scales = np.hstack(scales_list)
+        orientations = np.hstack(orientations_list)
+        descriptors = np.vstack(descriptors_list).view(np.bool)
+
+        if keypoints.shape[0] < self.n_keypoints:
+            self.keypoints = keypoints
+            self.scales = scales
+            self.orientations = orientations
+            self.responses = responses
+            self.descriptors = descriptors
+        else:
+            # Choose best n_keypoints according to Harris corner response
+            best_indices = responses.argsort()[::-1][:self.n_keypoints]
+            self.keypoints = keypoints[best_indices]
+            self.scales = scales[best_indices]
+            self.orientations = orientations[best_indices]
+            self.responses = responses[best_indices]
+            self.descriptors = descriptors[best_indices]
 
     def detect_and_extract(self, image):
         """Detect oriented FAST keypoints and extract rBRIEF descriptors.

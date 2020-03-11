@@ -18,6 +18,8 @@ POS = np.loadtxt(os.path.join(data_dir, "orb_descriptor_positions.txt"),
 POS0 = np.ascontiguousarray(POS[:, :2])
 POS1 = np.ascontiguousarray(POS[:, 2:])
 
+COL = np.loadtxt(os.path.join(data_dir, "orb-c_color_indices.txt"),
+                 dtype=np.int)
 
 # ORB-C EXTENSION
 def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
@@ -30,10 +32,12 @@ def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
 
     cdef Py_ssize_t i, d, kr, kc, pr0, pr1, pc0, pc1, spr0, spc0, spr1, spc1
     cdef double angle
-    cdef unsigned char[:, :, ::1] descriptors = \
-        np.zeros((keypoints.shape[0], POS.shape[0], image.shape[2]), dtype=np.uint8)
+    cdef unsigned char[:, ::1] descriptors = \
+        np.zeros((keypoints.shape[0], POS.shape[0]), dtype=np.uint8)
     cdef signed char[:, ::1] cpos0 = POS0
     cdef signed char[:, ::1] cpos1 = POS1
+
+    cdef int[:] col = COL
 
     with nogil:
         for i in range(descriptors.shape[0]):
@@ -57,9 +61,9 @@ def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
                 spc1 = <Py_ssize_t>round(cos_a * pr1 - sin_a * pc1)
 
                 # CHANGED TO LOOP OVER CHANNELS
-                for channel in range(image.shape[2]):
-                    if image[kr + spr0, kc + spc0, channel] < image[kr + spr1, kc + spc1, channel]:
-                        descriptors[i, j, channel] = True
+                # TODO: This can be done in several ways
+                if image[kr + spr0, kc + spc0, col[j]] < image[kr + spr1, kc + spc1, col[j]]:
+                    descriptors[i, j] = True
 
     return np.asarray(descriptors)
 
