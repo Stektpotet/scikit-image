@@ -25,7 +25,7 @@ def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
     #Changes from the standard ORB implementation includes:
     #   1. Dimensions of the input image - from 2D to 3D
     #   2. Dimensions of the descriptors - from 2D to 3D
-    #   3. Assignment of descriptors - looping through all channels of the image
+    #   3. Assignment of descriptors - selection of channel to sign of on
 
     cdef Py_ssize_t i, d, kr, kc, pr0, pr1, pc0, pc1, spr0, spc0, spr1, spc1
     cdef double angle
@@ -58,17 +58,19 @@ def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
                 spr1 = <Py_ssize_t>round(sin_a * pr1 + cos_a * pc1)
                 spc1 = <Py_ssize_t>round(cos_a * pr1 - sin_a * pc1)
 
-                # Sample point in channel col[j]
-                # TODO: This can be done in several ways
+                # Binary descriptor test NOTE/TODO: This can be done in several ways
+
+                # VARIANT 1 - Select a "random" channel to consider - if it has an impact, sign it as 1
                 if image[kr + spr0, kc + spc0, color_indices[j]] < image[kr + spr1, kc + spc1, color_indices[j]]:
                     descriptors[i, j] = True
 
+                # VARIANT 2 - Consider each channel, if either has an impact sign the bit of the descriptor as 1
                 # if image[kr + spr0, kc + spc0, 0] < image[kr + spr1, kc + spc1, 0] or \
                 #    image[kr + spr0, kc + spc0, 1] < image[kr + spr1, kc + spc1, 1] or \
                 #    image[kr + spr0, kc + spc0, 2] < image[kr + spr1, kc + spc1, 2]:
                 #     descriptors[i, j] = True
 
-
+                # VARIANT 3 - Consider each channel, if all has an impact sign the bit of the descriptor as 1
                 # if image[kr + spr0, kc + spc0, 0] < image[kr + spr1, kc + spc1, 0] and \
                 #    image[kr + spr0, kc + spc0, 1] < image[kr + spr1, kc + spc1, 1] and \
                 #    image[kr + spr0, kc + spc0, 2] < image[kr + spr1, kc + spc1, 2]:
