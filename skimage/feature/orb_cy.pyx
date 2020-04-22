@@ -18,12 +18,9 @@ POS = np.loadtxt(os.path.join(data_dir, "orb_descriptor_positions.txt"),
 POS0 = np.ascontiguousarray(POS[:, :2])
 POS1 = np.ascontiguousarray(POS[:, 2:])
 
-COL = np.loadtxt(os.path.join(data_dir, "orb-c_color_indices.txt"),
-                 dtype=np.int)
-
 # ORB-C EXTENSION
 def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
-              double[:] orientations):
+              double[:] orientations, int[:] color_indices):
 
     #Changes from the standard ORB implementation includes:
     #   1. Dimensions of the input image - from 2D to 3D
@@ -37,7 +34,8 @@ def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
     cdef signed char[:, ::1] cpos0 = POS0
     cdef signed char[:, ::1] cpos1 = POS1
 
-    cdef int[:] col = COL
+    # cdef int[:] col = color_indices
+    cdef double strength = 0
 
     with nogil:
         for i in range(descriptors.shape[0]):
@@ -60,10 +58,22 @@ def _c_orb_loop(double[:, :, ::1] image, Py_ssize_t[:, ::1] keypoints,
                 spr1 = <Py_ssize_t>round(sin_a * pr1 + cos_a * pc1)
                 spc1 = <Py_ssize_t>round(cos_a * pr1 - sin_a * pc1)
 
-                # CHANGED TO LOOP OVER CHANNELS
+                # Sample point in channel col[j]
                 # TODO: This can be done in several ways
-                if image[kr + spr0, kc + spc0, col[j]] < image[kr + spr1, kc + spc1, col[j]]:
+                if image[kr + spr0, kc + spc0, color_indices[j]] < image[kr + spr1, kc + spc1, color_indices[j]]:
                     descriptors[i, j] = True
+
+                # if image[kr + spr0, kc + spc0, 0] < image[kr + spr1, kc + spc1, 0] or \
+                #    image[kr + spr0, kc + spc0, 1] < image[kr + spr1, kc + spc1, 1] or \
+                #    image[kr + spr0, kc + spc0, 2] < image[kr + spr1, kc + spc1, 2]:
+                #     descriptors[i, j] = True
+
+
+                # if image[kr + spr0, kc + spc0, 0] < image[kr + spr1, kc + spc1, 0] and \
+                #    image[kr + spr0, kc + spc0, 1] < image[kr + spr1, kc + spc1, 1] and \
+                #    image[kr + spr0, kc + spc0, 2] < image[kr + spr1, kc + spc1, 2]:
+                #     descriptors[i, j] = True
+
 
     return np.asarray(descriptors)
 

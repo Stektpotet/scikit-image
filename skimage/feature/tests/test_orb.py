@@ -6,8 +6,8 @@ from skimage import data
 from skimage._shared.testing import test_parallel, xfail, arch32
 
 
-img = data.coins()
 
+img = data.coins()
 
 @test_parallel()
 def test_keypoints_orb_desired_no_of_keypoints():

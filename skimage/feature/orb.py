@@ -54,7 +54,10 @@ class ORB(FeatureDetector, DescriptorExtractor):
     n_scales : int, optional
         Maximum number of scales from the bottom of the image pyramid to
         extract the features from.
-
+    channel_weights : (red_weight: float, green_weight: float, blue_weight: float), optional
+        The weighting used for channel usage in determining descriptors
+    channel_weight_seed : int, optional
+        The seed used for the random distribution of channel selection in descriptor creation
     Attributes
     ----------
     keypoints : (N, 2) array
@@ -116,7 +119,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
 
     def __init__(self, downscale=1.2, n_scales=8,
                  n_keypoints=500, fast_n=9, fast_threshold=0.08,
-                 harris_k=0.04):
+                 harris_k=0.04, channel_weights=(1.0/3, 1.0/3, 1.0/3),  channel_weight_seed=0):
         self.downscale = downscale
         self.n_scales = n_scales
         self.n_keypoints = n_keypoints
@@ -124,11 +127,16 @@ class ORB(FeatureDetector, DescriptorExtractor):
         self.fast_threshold = fast_threshold
         self.harris_k = harris_k
 
+        #ORB-C EXTENSION
+        np.random.seed(channel_weight_seed)
+        self._channel_indices = np.random.choice(3, size=256, p=channel_weights)
+
         self.keypoints = None
         self.scales = None
         self.responses = None
         self.orientations = None
         self.descriptors = None
+
 
     def _build_pyramid(self, image):
         image = _prepare_grayscale_input_2D(image)
@@ -150,8 +158,8 @@ class ORB(FeatureDetector, DescriptorExtractor):
     def _c_detect_octave(self, octave_image: np.ndarray):
         if octave_image.ndim == 2:
             return self._detect_octave(octave_image)
-        # return self._detect_octave(color.rgb2gray(octave_image))  # TODO: this is a lazy approach, DO NOT LET IT STAY!
         print("Not implemented")
+        # return self._detect_octave(color.rgb2gray(octave_image))  # TODO: this is a lazy approach, DO NOT LET IT STAY!
 
     def _detect_octave(self, octave_image):
         # Extract keypoints for current octave
@@ -237,7 +245,7 @@ class ORB(FeatureDetector, DescriptorExtractor):
                                 copy=False)
 
         # NOTE: This is changed to use the ORB-C variant of the function
-        descriptors = _c_orb_loop(octave_image, keypoints, orientations)
+        descriptors = _c_orb_loop(octave_image, keypoints, orientations, self._channel_indices)
 
         return descriptors, mask
 
@@ -326,8 +334,9 @@ class ORB(FeatureDetector, DescriptorExtractor):
             Corresponding scales.
         orientations : (N, ) array
             Corresponding orientations in radians.
-
         """
+
+
         pyramid = self._c_build_pyramid(image, multichannel=True)
 
         descriptors_list = []
